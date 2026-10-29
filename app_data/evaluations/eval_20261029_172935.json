@@ -1,0 +1,68 @@
+{
+  "timestamp": "2026-10-29T17:29:35.519172",
+  "total_benchmarks": 10,
+  "passed_benchmarks": 10,
+  "pass_rate_pct": 100.0,
+  "results": [
+    {
+      "benchmark_id": "BM-01",
+      "name": "Trivial Task Zero-Write Gate",
+      "passed": true,
+      "evidence": "Score: 2/10, Stored: False"
+    },
+    {
+      "benchmark_id": "BM-02",
+      "name": "High-Value Verified Lesson Gate",
+      "passed": true,
+      "evidence": "Score: 10/10, Candidates: 1"
+    },
+    {
+      "benchmark_id": "BM-03",
+      "name": "Duplicate Detection & Canonical Merge",
+      "passed": true,
+      "evidence": "Target Canonical Note: 01_Memory/Approved/payment_flow.md"
+    },
+    {
+      "benchmark_id": "BM-04",
+      "name": "Team Collaboration Contradiction Flagging",
+      "passed": true,
+      "evidence": "Contradiction identified: True"
+    },
+    {
+      "benchmark_id": "BM-05",
+      "name": "Team Collaboration Complementary Linking",
+      "passed": true,
+      "evidence": "Complementary link: True, Contributors: 2"
+    },
+    {
+      "benchmark_id": "BM-06",
+      "name": "Untrusted Memory Exclusion",
+      "passed": true,
+      "evidence": "Zero unapproved/pending notes in trusted retrieval"
+    },
+    {
+      "benchmark_id": "BM-07",
+      "name": "Cross-Project Memory Scoping Isolation",
+      "passed": true,
+      "evidence": "Cross-project isolation verified (Leaked: False)"
+    },
+    {
+      "benchmark_id": "BM-08",
+      "name": "Sensitive Data & Key Redaction",
+      "passed": true,
+      "evidence": "Secret redacted: True"
+    },
+    {
+      "benchmark_id": "BM-09",
+      "name": "Memory Health Read-Only Audit",
+      "passed": true,
+      "evidence": "Approved Notes: 1, Approved Bytes: 557"
+    },
+    {
+      "benchmark_id": "BM-10",
+      "name": "Memory Archival and Restoration",
+      "passed": true,
+      "evidence": "Archive: True, Restore: True"
+    }
+  ]
+}

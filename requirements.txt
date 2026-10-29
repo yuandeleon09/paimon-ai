@@ -1,0 +1,10 @@
+google-genai
+python-dotenv
+pydantic
+pytest
+streamlit
+fastapi
+uvicorn
+python-docx
+openpyxl
+python-pptx

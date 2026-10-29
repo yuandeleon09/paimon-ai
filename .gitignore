@@ -1,0 +1,47 @@
+
+# Gemini and other API credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*credentials*.json
+*client_secret*.json
+*token*.json
+secrets/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+
+# React / Node.js
+node_modules/
+dist/
+build/
+.next/
+coverage/
+*.log
+
+# Obsidian private memory
+Obsidian-Brain/
+obsidian/
+.obsidian/
+
+# Runtime data
+*.sqlite
+*.sqlite3
+*.db
+uploads/
+temp/
+tmp/
+
+# n8n local credentials and configuration
+.n8n/
+
+# Windows
+Thumbs.db
+Desktop.ini
