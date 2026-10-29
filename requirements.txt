@@ -5,6 +5,8 @@ pytest
 streamlit
 fastapi
 uvicorn
+python-multipart
+httpx
 python-docx
 openpyxl
 python-pptx

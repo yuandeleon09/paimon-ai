@@ -64,14 +64,17 @@ export const api = {
       conversation_id: string;
       allow_revise?: boolean;
       collaborative?: boolean;
+      client_request_id?: string;
     },
     files?: File[]
   ): Promise<ChatTaskResult> {
+    const requestId = payload.client_request_id || `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     if (files && files.length > 0) {
       const formData = new FormData();
       formData.append('task', payload.task);
       formData.append('project_id', payload.project_id);
       formData.append('conversation_id', payload.conversation_id);
+      formData.append('client_request_id', requestId);
       if (payload.allow_revise !== undefined) {
         formData.append('allow_revise', String(payload.allow_revise));
       }
@@ -103,8 +106,30 @@ export const api = {
 
     return fetchJson<ChatTaskResult>('/api/chat', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, client_request_id: requestId }),
     });
+  },
+
+  // Task Queue, Recovery & Budget Management (Phase 1)
+  async getTask(taskId: string): Promise<any> {
+    return fetchJson(`/api/tasks/${taskId}`);
+  },
+
+  async resumeTask(taskId: string, extraBudget: number = 0): Promise<ChatTaskResult> {
+    return fetchJson<ChatTaskResult>(`/api/tasks/${taskId}/resume`, {
+      method: 'POST',
+      body: JSON.stringify({ extra_budget: extraBudget }),
+    });
+  },
+
+  async cancelTask(taskId: string): Promise<{ success: boolean; task_id: string; status: string }> {
+    return fetchJson(`/api/tasks/${taskId}/cancel`, {
+      method: 'POST',
+    });
+  },
+
+  async getLocalUsage(timeWindowHours: number = 24): Promise<any> {
+    return fetchJson(`/api/usage/local?time_window_hours=${timeWindowHours}`);
   },
 
   // Agents & Collaboration

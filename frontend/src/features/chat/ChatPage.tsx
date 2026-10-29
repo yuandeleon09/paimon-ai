@@ -15,7 +15,9 @@ import {
   FileSpreadsheet,
   FileCode,
   X,
-  FileCheck
+  FileCheck,
+  RotateCcw,
+  ExternalLink
 } from 'lucide-react';
 import { api } from '../../services/api';
 import type { Message, Conversation, ChatTaskResult } from '../../services/types';
@@ -275,6 +277,49 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       setErrorMsg(err.message || 'Task execution failed.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleResumeTask = async (extraBudget: number = 0) => {
+    if (!lastResult?.task_id && !lastResult?.run_id) return;
+    const taskId = lastResult.task_id || lastResult.run_id;
+    setIsLoading(true);
+    setErrorMsg(null);
+    try {
+      const res = await api.resumeTask(taskId, extraBudget);
+      setLastResult(res);
+      const assistantMsg: Message = {
+        id: `asst-${Date.now()}`,
+        conversation_id: activeConvId,
+        role: 'assistant',
+        content: res.result,
+        agent_name: 'orchestrator',
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to resume task.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCancelTask = async () => {
+    if (!lastResult?.task_id && !lastResult?.run_id) return;
+    const taskId = lastResult.task_id || lastResult.run_id;
+    try {
+      await api.cancelTask(taskId);
+      setLastResult((prev) => prev ? { ...prev, status: 'cancelled', can_resume_now: false } : null);
+      const systemMsg: Message = {
+        id: `sys-${Date.now()}`,
+        conversation_id: activeConvId,
+        role: 'system',
+        content: `Task was cancelled. Completed checkpoints and partial deliverables remain saved.`,
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, systemMsg]);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to cancel task.');
     }
   };
 
@@ -542,6 +587,105 @@ export const ChatPage: React.FC<ChatPageProps> = ({
             borderTop: '1px solid var(--border)',
           }}
         >
+          {/* Phase 1 Task Paused / Recovery Action Banner */}
+          {lastResult && (lastResult.can_resume_now || lastResult.status?.startsWith('paused_') || lastResult.status === 'interrupted') && (
+            <div
+              style={{
+                padding: '12px 16px',
+                marginBottom: '12px',
+                backgroundColor: 'var(--surface)',
+                border: '1px solid #334155',
+                borderRadius: 'var(--radius-md)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <AlertCircle size={18} color="#F59E0B" />
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>
+                    {lastResult.status === 'paused_quota'
+                      ? 'Task paused: Daily Gemini quota reached. Safe checkpoints preserved.'
+                      : lastResult.status === 'paused_budget'
+                      ? 'Task paused: Local safety cap reached.'
+                      : lastResult.status === 'paused_rate_limit'
+                      ? 'Task paused: Rate limited (429). Retried with backoff.'
+                      : lastResult.status === 'interrupted'
+                      ? 'Task interrupted: Server restarted while processing.'
+                      : `Task paused: ${lastResult.pause_reason || 'Interrupted'}`}
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--muted)', marginTop: '2px' }}>
+                    Checkpoints saved in local SQLite. You can resume without restarting finished steps.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {lastResult.status === 'paused_budget' ? (
+                  <button
+                    onClick={() => handleResumeTask(2)}
+                    disabled={isLoading}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      backgroundColor: 'var(--primary)',
+                      color: '#0D1420',
+                      fontWeight: 600,
+                      fontSize: '12px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <RotateCcw size={13} />
+                    <span>Raise Budget & Resume (+2)</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleResumeTask(0)}
+                    disabled={isLoading}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      backgroundColor: 'var(--primary)',
+                      color: '#0D1420',
+                      fontWeight: 600,
+                      fontSize: '12px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <RotateCcw size={13} />
+                    <span>Resume Task</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={handleCancelTask}
+                  disabled={isLoading}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: 'transparent',
+                    color: 'var(--muted)',
+                    fontSize: '12px',
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Removable Attachment Preview Chips */}
           {attachments.length > 0 && (
             <div
@@ -726,7 +870,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
           {lastResult ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Task Verdict */}
+              {/* Task Verdict & Local Budget Status */}
               <div
                 style={{
                   padding: '12px',
@@ -736,11 +880,44 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>Run ID: {lastResult.run_id.slice(0, 8)}</span>
+                  <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
+                    Task ID: {(lastResult.task_id || lastResult.run_id).slice(0, 8)}
+                  </span>
                   <StatusBadge status={lastResult.verdict} />
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--text)' }}>
-                  Calls used: <strong>{lastResult.run_metadata?.api_calls || 1}</strong> / 8
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '11px', marginTop: '6px' }}>
+                  <div>
+                    <span style={{ color: 'var(--muted)' }}>Local Task Budget: </span>
+                    <strong style={{ color: 'var(--text)' }}>
+                      {lastResult.logical_budget?.used_known_attempts ?? lastResult.run_metadata?.api_calls ?? 1}
+                    </strong>
+                    {' / '}
+                    <span>{lastResult.logical_budget?.limit ?? 8} attempts</span>
+                    <div style={{ fontSize: '10px', color: 'var(--muted)' }}>(Paimon local safety cap)</div>
+                  </div>
+
+                  <div style={{ paddingTop: '6px', borderTop: '1px solid var(--border)' }}>
+                    <div style={{ color: 'var(--muted)', marginBottom: '2px' }}>Google AI Studio Quota:</div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text)', fontWeight: 500 }}>Not available</span>
+                      <a
+                        href="https://aistudio.google.com/usage"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          color: 'var(--primary)',
+                          textDecoration: 'none',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '2px',
+                          fontSize: '11px',
+                        }}
+                      >
+                        Check AI Studio <ExternalLink size={10} />
+                      </a>
+                    </div>
+                  </div>
                 </div>
               </div>
 

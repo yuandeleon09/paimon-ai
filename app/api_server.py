@@ -34,6 +34,10 @@ api_app.add_middleware(
     allow_headers=["*"],
 )
 
+@api_app.on_event("startup")
+def startup_event():
+    run_store.reconcile_startup_tasks()
+
 @api_app.get("/api/status")
 def get_status():
     storage_rep = memory_store.get_storage_report()
@@ -69,8 +73,9 @@ def get_messages(conversation_id: str):
 async def execute_chat(request: Request):
     content_type = request.headers.get("content-type", "")
     attachments: List[Tuple[str, bytes]] = []
+    idempotency_key: Optional[str] = None
 
-    if "multipart/form-data" in content_type:
+    if "multipart/form-data" in content_type or "application/x-www-form-urlencoded" in content_type:
         form = await request.form()
         task = str(form.get("task", "")).strip()
         if not task:
@@ -87,6 +92,10 @@ async def execute_chat(request: Request):
             mock = str(mock_val).lower() in ("true", "1")
         else:
             mock = not bool(config.gemini_api_key)
+
+        idempotency_key = form.get("idempotency_key") or form.get("client_request_id")
+        if idempotency_key:
+            idempotency_key = str(idempotency_key).strip()
 
         uploaded_files = form.getlist("files")
         for uf in uploaded_files:
@@ -108,6 +117,9 @@ async def execute_chat(request: Request):
         allow_revise = payload.get("allow_revise", True)
         collaborative = payload.get("collaborative", True)
         mock = payload.get("mock", not bool(config.gemini_api_key))
+        idempotency_key = payload.get("idempotency_key") or payload.get("client_request_id")
+        if idempotency_key:
+            idempotency_key = str(idempotency_key).strip()
 
         json_attachments = payload.get("attachments", [])
         if isinstance(json_attachments, list):
@@ -138,7 +150,8 @@ async def execute_chat(request: Request):
             allow_revise=allow_revise,
             collaborative=collaborative,
             conversation_id=conv_id,
-            attachments=attachments
+            attachments=attachments,
+            idempotency_key=idempotency_key
         )
 
         # Save assistant delivery
@@ -159,6 +172,7 @@ async def execute_chat(request: Request):
         ]
 
         return {
+            "task_id": result.get("task_id", result["run_id"]),
             "run_id": result["run_id"],
             "status": result["status"],
             "verdict": result["verdict"],
@@ -168,6 +182,17 @@ async def execute_chat(request: Request):
             "memory_decision": result.get("memory_decision"),
             "saved_candidate_ids": result.get("saved_candidate_ids", []),
             "run_metadata": result.get("run_metadata", {}),
+            "logical_budget": result.get("logical_budget", {
+                "used_known_attempts": result.get("run_metadata", {}).get("api_calls", 1),
+                "limit": config.max_model_calls_per_task,
+                "remaining": max(0, config.max_model_calls_per_task - result.get("run_metadata", {}).get("api_calls", 1))
+            }),
+            "provider_quota": result.get("provider_quota", {
+                "status": "Not available — check Google AI Studio",
+                "source": "https://aistudio.google.com/usage"
+            }),
+            "can_resume_now": result.get("can_resume_now", False),
+            "pause_reason": result.get("pause_reason"),
             "attachments": result.get("attachments", []),
             "attachment_warnings": result.get("attachment_warnings", [])
         }
@@ -177,6 +202,64 @@ async def execute_chat(request: Request):
         error_msg = f"Task execution failed: {str(e)}"
         run_store.add_message(conv_id, "assistant", error_msg, agent_name="system")
         raise HTTPException(status_code=500, detail=error_msg)
+
+@api_app.get("/api/tasks/{task_id}")
+def get_task_endpoint(task_id: str):
+    task = run_store.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found.")
+    steps = run_store.get_step_checkpoints(task_id)
+    can_resume = task["status"] in ("paused_budget", "paused_rate_limit", "paused_quota", "paused_transient", "interrupted")
+    return {
+        "task_id": task["id"],
+        "task": task,
+        "status": task["status"],
+        "current_stage": task.get("current_stage"),
+        "work_type": task.get("work_type"),
+        "result": task.get("result") or task.get("partial_result") or "",
+        "partial_result_available": bool(task.get("partial_result")),
+        "pause_reason": task.get("last_error"),
+        "can_resume_now": can_resume,
+        "logical_budget": {
+            "used_known_attempts": task.get("used_attempts", 0),
+            "limit": task.get("budget_limit", 8),
+            "remaining": max(0, task.get("budget_limit", 8) - task.get("used_attempts", 0))
+        },
+        "provider_quota": {
+            "status": "Not available — check Google AI Studio",
+            "source": "https://aistudio.google.com/usage"
+        },
+        "steps": [{"agent": s["agent_role"], "status": s["status"], "finished_at": s.get("finished_at")} for s in steps],
+        "created_at": task.get("created_at"),
+        "updated_at": task.get("updated_at")
+    }
+
+@api_app.post("/api/tasks/{task_id}/resume")
+def resume_task_endpoint(task_id: str, payload: Dict[str, Any] = Body(default={})):
+    extra_budget = int(payload.get("extra_budget", 0))
+    orchestrator = MultiAgentOrchestrator(config, mock_mode=not bool(config.gemini_api_key))
+    try:
+        result = orchestrator.resume_task(task_id, extra_budget=extra_budget)
+        return result
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to resume task: {str(e)}")
+
+@api_app.post("/api/tasks/{task_id}/cancel")
+def cancel_task_endpoint(task_id: str):
+    success = run_store.cancel_task(task_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found.")
+    return {
+        "task_id": task_id,
+        "status": "cancelled",
+        "message": "Task cancelled successfully."
+    }
+
+@api_app.get("/api/usage/local")
+def get_local_usage_endpoint(time_window_hours: int = 24):
+    return run_store.get_local_usage(time_window_hours=time_window_hours)
 
 @api_app.get("/api/agents")
 def get_agents():

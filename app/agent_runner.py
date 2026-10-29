@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional
 from app.gemini_client import GeminiClient
 from app.memory_store import MemoryStore
+from app.budget_manager import TaskBudget
 from app.validators import (
     PlannerOutput,
     MemoryManagerOutput,
@@ -17,7 +18,15 @@ class AgentRunner:
         self.client = gemini_client
         self.memory = memory_store
 
-    def run_agent(self, agent_name: str, task: str, context_data: Dict[str, Any]) -> BaseAgentOutput:
+    def run_agent(
+        self,
+        agent_name: str,
+        task: str,
+        context_data: Dict[str, Any],
+        task_budget: Optional[TaskBudget] = None,
+        task_id: str = "default",
+        step_key: str = ""
+    ) -> BaseAgentOutput:
         """Loads prompt, builds context, calls Gemini, and validates structured response."""
         system_instruction = self.memory.get_agent_prompt(agent_name)
 
@@ -44,7 +53,10 @@ class AgentRunner:
         raw_json = self.client.generate_json_response(
             full_prompt,
             system_instruction=system_instruction,
-            agent_name=agent_name
+            agent_name=agent_name,
+            task_budget=task_budget,
+            task_id=task_id,
+            step_key=step_key or agent_name
         )
 
         # Validate with specific pydantic models

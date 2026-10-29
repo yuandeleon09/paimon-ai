@@ -59,8 +59,25 @@ export interface AttachmentMeta {
   warnings?: string[];
 }
 
+export interface TaskLogicalBudget {
+  used_known_attempts: number;
+  limit: number;
+  remaining: number;
+  tokens?: {
+    input_tokens_known: number;
+    output_tokens_known: number;
+    total_tokens_known: number;
+  };
+}
+
+export interface ProviderQuotaInfo {
+  status: string;
+  source: string;
+}
+
 export interface ChatTaskResult {
   run_id: string;
+  task_id?: string;
   status: string;
   verdict: string;
   result: string;
@@ -75,6 +92,12 @@ export interface ChatTaskResult {
   run_metadata?: Record<string, any>;
   attachments?: AttachmentMeta[];
   attachment_warnings?: string[];
+  logical_budget?: TaskLogicalBudget;
+  provider_quota?: ProviderQuotaInfo;
+  can_resume_now?: boolean;
+  pause_reason?: string;
+  partial_result_available?: boolean;
+  is_deduplicated?: boolean;
 }
 
 export interface AgentRole {
